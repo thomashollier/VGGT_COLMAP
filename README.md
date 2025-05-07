@@ -1,9 +1,8 @@
-### warning: Use at your own risk...
+## warning: Use at your own risk...
 
-Most of this code was generated with AI. I designed the workflow of the container from a streamlined scalable VFX production perspective, cajoled the AI assitants into debugging and making the scripts robust smoothly, and have used it extensively with good results. 
+Most of this code was generated with AI. I designed the workflow of the container from a streamlined scalable VFX production perspective, cajoled the AI assitants into debugging and making the scripts robust smoothly, and have used it extensively with good results on a RTX4090 laptop with WSL2. 
 
 
-```markdown
 # VGGT to COLMAP Dockerized Pipeline
 
 This project provides a Dockerized pipeline to process input videos or image sequences using Meta's VGGT (Visual Geometry Grounded Transformer) model and then convert the output into a COLMAP-compatible dataset.
