@@ -1,10 +1,7 @@
-You got it! Since I can't directly offer a "download" button, the best way to do this is to provide the full, raw text of the README.md in a single code block. You can then:
+### warning: Use at your own risk...
 
-1.  Click the "Copy code" button that usually appears at the top right of the code block.
-2.  Paste the entire content into a new plain text file.
-3.  Save that file as `README.md` in your project directory.
+Most of this code was generated with AI. I designed the workflow of the container from a streamlined scalable VFX production perspective, cajoled the AI assitants into debugging and making the scripts robust smoothly, and have used it extensively with good results. 
 
-Here is the complete `README.md` content formatted for easy copying:
 
 ```markdown
 # VGGT to COLMAP Dockerized Pipeline
