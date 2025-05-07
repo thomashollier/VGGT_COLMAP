@@ -1,0 +1,155 @@
+#!/bin/bash
+
+# --- Script Configuration ---
+DOCKER_IMAGE_NAME="vggt-colmap-processor"
+RELATIVE_HOST_HF_CACHE_DIR="./models"
+DEFAULT_FPS=25
+# --- End Script Configuration ---
+
+# --- Helper Functions ---
+function print_usage() {
+    echo "Usage: $0 <full_path_to_input> <full_path_to_parent_output_directory> [fps]"
+    echo ""
+    echo "Arguments:"
+    echo "  <full_path_to_input>             : Absolute path to EITHER an input video file OR"
+    echo "                                       a directory containing pre-extracted image frames."
+    echo "  <full_path_to_parent_output_directory> : Absolute path to a directory where all"
+    echo "                                       processing results will be stored."
+    echo "  [fps]                              : Optional. Frames per second to extract if input is a video."
+    echo "                                       Not used if input is a directory of frames. Default: ${DEFAULT_FPS}."
+    echo ""
+    echo "The script will create a subdirectory inside <full_path_to_parent_output_directory>."
+    echo "HuggingFace models will be cached in a 'models' subdirectory next to this script."
+}
+
+# --- Argument Validation ---
+if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+    echo "Error: Incorrect number of arguments."
+    print_usage
+    exit 1
+fi
+
+HOST_INPUT_PATH="$1"
+HOST_OUTPUT_PARENT_DIR="$2"
+FPS_ARG="${3:-$DEFAULT_FPS}"
+
+INPUT_TYPE=""
+FPS_TO_PASS="" # Argument for the container script
+
+if [ -f "${HOST_INPUT_PATH}" ]; then
+    INPUT_TYPE="video"
+    FPS_TO_PASS="$FPS_ARG"
+    if ! [[ "$FPS_TO_PASS" =~ ^[0-9]+([\.][0-9]+)?$ && $(echo "$FPS_TO_PASS > 0" | bc -l) -eq 1 ]]; then
+        echo "Error: FPS must be a positive number for video input. Got: '$FPS_TO_PASS'"
+        print_usage
+        exit 1
+    fi
+    echo "Info: Input is a video file. FPS for extraction: ${FPS_TO_PASS}"
+elif [ -d "${HOST_INPUT_PATH}" ]; then
+    INPUT_TYPE="frames_dir"
+    FPS_TO_PASS="NA" # Not applicable for directory of frames
+    echo "Info: Input is a directory of frames. FPS argument will be ignored."
+else
+    echo "Error: Input path '${HOST_INPUT_PATH}' is not a valid file or directory."
+    print_usage
+    exit 1
+fi
+
+if [ ! -d "${HOST_OUTPUT_PARENT_DIR}" ]; then
+    echo "Info: Parent output directory '${HOST_OUTPUT_PARENT_DIR}' not found. Attempting to create it."
+    mkdir -p "${HOST_OUTPUT_PARENT_DIR}"
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to create parent output directory '${HOST_OUTPUT_PARENT_DIR}'."
+        print_usage
+        exit 1
+    fi
+    echo "Info: Created parent output directory '${HOST_OUTPUT_PARENT_DIR}'."
+fi
+
+# --- Prepare Paths ---
+INPUT_BASENAME=$(basename "${HOST_INPUT_PATH}")
+# Remove extension if it's a file, otherwise use directory name as is for now
+if [ "$INPUT_TYPE" == "video" ]; then
+    INPUT_FILENAME_NO_EXT="${INPUT_BASENAME%.*}"
+else # frames_dir
+    INPUT_FILENAME_NO_EXT="${INPUT_BASENAME}"
+fi
+
+HOST_SPECIFIC_OUTPUT_DIR_SUFFIX_FPS_PART=""
+if [ "$INPUT_TYPE" == "video" ]; then
+    HOST_SPECIFIC_OUTPUT_DIR_SUFFIX_FPS_PART="_${FPS_TO_PASS}fps"
+fi
+HOST_SPECIFIC_OUTPUT_DIR="${HOST_OUTPUT_PARENT_DIR}/${INPUT_FILENAME_NO_EXT}_vggt_colmap_output${HOST_SPECIFIC_OUTPUT_DIR_SUFFIX_FPS_PART}"
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+ABSOLUTE_HOST_HF_CACHE_DIR="${SCRIPT_DIR}/${RELATIVE_HOST_HF_CACHE_DIR}"
+
+echo "--------------------------------------------------"
+echo "Input Path:            ${HOST_INPUT_PATH}"
+echo "Input Type:            ${INPUT_TYPE}"
+echo "Parent Output Dir:     ${HOST_OUTPUT_PARENT_DIR}"
+echo "Specific Output Dir:   ${HOST_SPECIFIC_OUTPUT_DIR}"
+if [ "$INPUT_TYPE" == "video" ]; then
+    echo "Extraction FPS:        ${FPS_TO_PASS}"
+fi
+echo "Docker Image:          ${DOCKER_IMAGE_NAME}"
+echo "HuggingFace Cache Dir: ${ABSOLUTE_HOST_HF_CACHE_DIR}"
+echo "--------------------------------------------------"
+
+mkdir -p "${HOST_SPECIFIC_OUTPUT_DIR}"
+if [ $? -ne 0 ]; then exit 1; fi
+echo "Info: Ensured specific output directory exists: ${HOST_SPECIFIC_OUTPUT_DIR}"
+
+mkdir -p "${ABSOLUTE_HOST_HF_CACHE_DIR}"
+if [ $? -ne 0 ]; then exit 1; fi
+echo "Info: Ensured HuggingFace cache directory exists: ${ABSOLUTE_HOST_HF_CACHE_DIR}"
+
+# --- Paths for INSIDE the CONTAINER ---
+# CONTAINER_INPUT_PATH will point to where the video OR the frames_dir is mounted
+CONTAINER_INPUT_PATH="/workspace/input_data"
+CONTAINER_OUTPUT_BASE_DIR="/workspace/output_results" # Renamed for clarity from previous scripts
+
+# --- Prepare Mounts and Docker Command ---
+HF_CACHE_MOUNT_COMMAND_PART="-v ${ABSOLUTE_HOST_HF_CACHE_DIR}:/opt/hf_cache"
+
+INPUT_MOUNT_COMMAND_PART=""
+if [ "$INPUT_TYPE" == "video" ]; then
+    # Mount the single video file
+    INPUT_MOUNT_COMMAND_PART="-v ${HOST_INPUT_PATH}:${CONTAINER_INPUT_PATH}:ro" # Mount file to container path
+else # frames_dir
+    # Mount the entire directory of frames
+    INPUT_MOUNT_COMMAND_PART="-v ${HOST_INPUT_PATH}:${CONTAINER_INPUT_PATH}:ro" # Mount dir to container path
+fi
+
+echo ""
+echo "Starting Docker container for processing..."
+echo "Command: docker run --gpus all --rm ${HF_CACHE_MOUNT_COMMAND_PART} ${INPUT_MOUNT_COMMAND_PART} -v \"${HOST_SPECIFIC_OUTPUT_DIR}:${CONTAINER_OUTPUT_BASE_DIR}\" \"${DOCKER_IMAGE_NAME}\" \"${INPUT_TYPE}\" \"${CONTAINER_INPUT_PATH}\" \"${CONTAINER_OUTPUT_BASE_DIR}\" \"${FPS_TO_PASS}\""
+
+docker run \
+    --gpus all \
+    --rm \
+    ${HF_CACHE_MOUNT_COMMAND_PART} \
+    ${INPUT_MOUNT_COMMAND_PART} \
+    -v "${HOST_SPECIFIC_OUTPUT_DIR}:${CONTAINER_OUTPUT_BASE_DIR}" \
+    "${DOCKER_IMAGE_NAME}" \
+    "${INPUT_TYPE}" \
+    "${CONTAINER_INPUT_PATH}" \
+    "${CONTAINER_OUTPUT_BASE_DIR}" \
+    "${FPS_TO_PASS}"
+
+DOCKER_EXIT_CODE=$?
+if [ ${DOCKER_EXIT_CODE} -ne 0 ]; then
+    echo ""
+    echo "Error: Docker container exited with code ${DOCKER_EXIT_CODE}."
+    echo "Please check the container logs above for details."
+    exit ${DOCKER_EXIT_CODE}
+fi
+
+echo ""
+echo "--------------------------------------------------"
+echo "Processing complete!"
+echo "Results should be available in: ${HOST_SPECIFIC_OUTPUT_DIR}"
+# The internal script run_vggt_colmap.sh will detail the sub-paths.
+echo "--------------------------------------------------"
+
+exit 0
