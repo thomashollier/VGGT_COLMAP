@@ -1,6 +1,6 @@
 ## warning: Use at your own risk...
 
-Most of this code was generated with AI. I designed the workflow of the container from a streamlined scalable VFX production perspective, cajoled the AI assitants into debugging and making the scripts robust smoothly, and have used it extensively with good results on a RTX4090 laptop with WSL2. 
+Most of this code was generated with AI. I designed the workflow of the container from a streamlined scalable VFX production perspective, cajoled the AI assitants into debugging and making the scripts robust smoothly, and have used it extensively with good results on a RTX4090 laptop with WSL2. I make no other claims...
 
 
 # VGGT to COLMAP Dockerized Pipeline
